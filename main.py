@@ -155,7 +155,7 @@ def main():
 
             # Embedding concat
             embedding_vectors = train_outputs['layer1']
-            for layer_name in ['layer2', 'layer3', 'layer4']:
+            for layer_name in ['layer2', 'layer3']:
                 embedding_vectors = embedding_concat(embedding_vectors, train_outputs[layer_name])
 
             # randomly select d dimension
@@ -202,7 +202,7 @@ def main():
         
         # Embedding concat
         embedding_vectors = test_outputs['layer1']
-        for layer_name in ['layer2', 'layer3', 'layer4']:
+        for layer_name in ['layer2', 'layer3']:
             embedding_vectors = embedding_concat(embedding_vectors, test_outputs[layer_name])
 
         # randomly select d dimension
