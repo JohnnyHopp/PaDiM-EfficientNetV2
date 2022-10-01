@@ -125,6 +125,7 @@ def main():
 
     total_roc_auc = []
     total_pixel_roc_auc = []
+    use_gpu = True
 
     for class_name in mvtec.CLASS_NAMES:
 
@@ -171,9 +172,15 @@ def main():
                 # cov[:, :, i] = LedoitWolf().fit(embedding_vectors[:, :, i].numpy()).covariance_
                 cov[:, :, i] = np.cov(embedding_vectors[:, :, i].numpy(), rowvar=False) + 0.01 * I
             # save learned distribution
-            train_outputs = [mean, cov]
+            if use_gpu:
+                cov = torch.Tensor(cov).to(device)
+                conv_inv = torch.linalg.inv(cov.permute(2,1,0)).permute(2,1,0).cpu().numpy()
+            else:
+                conv_inv = np.linalg.inv(cov.T).T
+            train_outputs = [mean, conv_inv]
             with open(train_feature_filepath, 'wb') as f:
                 pickle.dump(train_outputs, f)
+            del mean, cov, conv_inv
         else:
             print('load train set feature from: %s' % train_feature_filepath)
             with open(train_feature_filepath, 'rb') as f:
@@ -211,15 +218,14 @@ def main():
         
         # calculate distance matrix
         B, C, H, W = embedding_vectors.size()
-        use_gpu = True
         if use_gpu:
             embedding_vectors = embedding_vectors.view(B, C, H * W).to(device)
             dist_list = torch.zeros(size=(H*W, B))
             mean = torch.Tensor(train_outputs[0]).to(device)
-            cov = torch.Tensor(train_outputs[1]).to(device)
+            cov_inv = torch.Tensor(train_outputs[1]).to(device)
             for i in range(H * W):
                 delta = embedding_vectors[:, :, i] - mean[:, i]
-                m_dist = torch.sqrt(torch.diag(torch.mm(torch.mm(delta, torch.linalg.inv(cov[:, :, i])), delta.t())))
+                m_dist = torch.sqrt(torch.diag(torch.mm(torch.mm(delta, cov_inv[:, :, i]), delta.t())))
                 dist_list[i] = m_dist
             dist_list = dist_list.cpu().numpy()
         else:
@@ -227,8 +233,7 @@ def main():
             dist_list = []
             for i in range(H * W):
                 mean = train_outputs[0][:, i]
-                conv_inv = np.linalg.inv(train_outputs[1][:, :, i])
-                dist = [mahalanobis(sample[:, i], mean, conv_inv) for sample in embedding_vectors]
+                dist = [mahalanobis(sample[:, i], mean, train_outputs[1][:, :, i]) for sample in embedding_vectors]
                 dist_list.append(dist)
 
         dist_list = np.array(dist_list).transpose(1, 0).reshape(B, H, W)
