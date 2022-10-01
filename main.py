@@ -4,12 +4,15 @@ import argparse
 import numpy as np
 import os
 import pickle
+import itertools
+from sympy import arg
 from tqdm import tqdm
 from collections import OrderedDict
 from sklearn.metrics import roc_auc_score
 from sklearn.metrics import roc_curve
 from sklearn.metrics import precision_recall_curve
 from sklearn.covariance import LedoitWolf
+import scipy.spatial.distance as SSD
 from scipy.spatial.distance import mahalanobis
 from scipy.ndimage import gaussian_filter
 from skimage import morphology
@@ -38,6 +41,8 @@ def parse_args():
      'efficientnet_v2_m', 'efficientnet_v2_l', 'efficientnet_b5_ns', 'efficientnet_b6_ns', 'efficientnet_b7_ns', 
      'tf_efficientnet_l2_ns_475'], default='efficientnet_b7_ns')
     parser.add_argument('--dim_reduction', action='store_true')
+    parser.add_argument('--batch_size', type=int, default=32)
+    parser.add_argument('--use_gpu', action='store_true')
     return parser.parse_args()
 
 
@@ -125,14 +130,14 @@ def main():
 
     total_roc_auc = []
     total_pixel_roc_auc = []
-    use_gpu = True
+    use_gpu = args.use_gpu
 
     for class_name in mvtec.CLASS_NAMES:
 
         train_dataset = mvtec.MVTecDataset(args.data_path, class_name=class_name, is_train=True)
-        train_dataloader = DataLoader(train_dataset, batch_size=32, pin_memory=True)
+        train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, pin_memory=True)
         test_dataset = mvtec.MVTecDataset(args.data_path, class_name=class_name, is_train=False)
-        test_dataloader = DataLoader(test_dataset, batch_size=32, pin_memory=True)
+        test_dataloader = DataLoader(test_dataset, batch_size=args.batch_size, pin_memory=True)
 
         train_outputs = OrderedDict([('layer1', []), ('layer2', []), ('layer3', [])])
         test_outputs = OrderedDict([('layer1', []), ('layer2', []), ('layer3', [])])
@@ -166,21 +171,22 @@ def main():
             B, C, H, W = embedding_vectors.size()
             embedding_vectors = embedding_vectors.view(B, C, H * W)
             mean = torch.mean(embedding_vectors, dim=0).numpy()
-            cov = torch.zeros(C, C, H * W).numpy()
+            _cov = torch.zeros(C, C).numpy()
+            conv_inv = torch.zeros(C, C, H * W).numpy()
             I = np.identity(C)
             for i in range(H * W):
                 # cov[:, :, i] = LedoitWolf().fit(embedding_vectors[:, :, i].numpy()).covariance_
-                cov[:, :, i] = np.cov(embedding_vectors[:, :, i].numpy(), rowvar=False) + 0.01 * I
+                _cov = np.cov(embedding_vectors[:, :, i].numpy(), rowvar=False) + 0.01 * I
+                if use_gpu:
+                    _cov = torch.Tensor(_cov).to(device)
+                    conv_inv[:, :, i] = torch.linalg.inv(_cov).cpu().numpy()
+                else:    
+                    conv_inv[:, :, i] =  np.linalg.inv(_cov)
             # save learned distribution
-            if use_gpu:
-                cov = torch.Tensor(cov).to(device)
-                conv_inv = torch.linalg.inv(cov.permute(2,1,0)).permute(2,1,0).cpu().numpy()
-            else:
-                conv_inv = np.linalg.inv(cov.T).T
             train_outputs = [mean, conv_inv]
             with open(train_feature_filepath, 'wb') as f:
-                pickle.dump(train_outputs, f)
-            del mean, cov, conv_inv
+                pickle.dump(train_outputs, f, protocol=pickle.HIGHEST_PROTOCOL)
+            del mean, _cov, conv_inv
         else:
             print('load train set feature from: %s' % train_feature_filepath)
             with open(train_feature_filepath, 'rb') as f:
@@ -233,7 +239,9 @@ def main():
             dist_list = []
             for i in range(H * W):
                 mean = train_outputs[0][:, i]
-                dist = [mahalanobis(sample[:, i], mean, train_outputs[1][:, :, i]) for sample in embedding_vectors]
+                # dist = [mahalanobis(sample[:, i], mean, train_outputs[1][:, :, i]) for sample in embedding_vectors]
+                dist = SSD.cdist(embedding_vectors[:,:,i], mean[None, :], metric='mahalanobis', VI=train_outputs[1][:, :, i])
+                dist = list(itertools.chain(*dist))            
                 dist_list.append(dist)
 
         dist_list = np.array(dist_list).transpose(1, 0).reshape(B, H, W)
