@@ -1,7 +1,10 @@
 # PaDiM-EfficientNet_NS and PaDiM-EfficientNetV2
 
 * EfficentNet_NS outperforms both R18-Rd100 and WR50-Rd550 from original implementation on image-level ROCAUC significantly!!!
+## Features
 * The current SOTA from EfficentNet family, EfficentNet_NS(Noisy Student) and EfficientNetV2, are used as the feature extractor
+* The conv_inv instead of conv is saved to speed up the calculation of mahalanobis distance
+
 
 ## Requirement
 
