@@ -1,6 +1,6 @@
 # PaDiM-EfficientNet_NS and PaDiM-EfficientNetV2
 
-* EfficentNet_NS outperforms both R18-Rd100 and WR50-Rd550 from original implementation on image-level ROCAUC significantly!!!
+EfficentNet_NS outperforms both R18-Rd100 and WR50-Rd550 from original implementation on image-level ROCAUC significantly!!!
 ## Features
 * The current SOTA from EfficentNet family, EfficentNet_NS(Noisy Student) and EfficientNetV2, are used as the feature extractor
 * The conv_inv instead of conv is saved to speed up the calculation of mahalanobis distance
@@ -24,7 +24,7 @@ MVTec AD datasets : Download from [MVTec website](https://www.mvtec.com/company/
 ## Usage
 
 ```bash
-python main.py --data_path mvtec_anomaly_detection/ --save_path ./mvtec_result --arch efficientnet_b7_ns
+python main.py --data_path mvtec_anomaly_detection/ --save_path ./mvtec_result --arch efficientnet_b7_ns --use_gpu
 ```
 
 ## Results

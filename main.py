@@ -35,13 +35,13 @@ device = torch.device('cuda' if use_cuda else 'cpu')
 
 def parse_args():
     parser = argparse.ArgumentParser('PaDiM')
-    parser.add_argument('--data_path', type=str, default='D:/dataset/mvtec_anomaly_detection')
-    parser.add_argument('--save_path', type=str, default='./mvtec_result')
-    parser.add_argument('--arch', type=str, choices=['resnet18', 'wide_resnet50_2',
+    parser.add_argument('-d', '--data_path', type=str, default='D:/dataset/mvtec_anomaly_detection')
+    parser.add_argument('-s', '--save_path', type=str, default='./mvtec_result')
+    parser.add_argument('-a', '--arch', type=str, choices=['resnet18', 'wide_resnet50_2',
      'efficientnet_v2_m', 'efficientnet_v2_l', 'efficientnet_b5_ns', 'efficientnet_b6_ns', 'efficientnet_b7_ns', 
      'tf_efficientnet_l2_ns_475'], default='efficientnet_b7_ns')
-    parser.add_argument('--dim_reduction', action='store_true')
-    parser.add_argument('--batch_size', type=int, default=32)
+    parser.add_argument('-r', '--reduce_dim', action='store_true')
+    parser.add_argument('-b', '--batch_size', type=int, default=32)
     parser.add_argument('--use_gpu', action='store_true')
     return parser.parse_args()
 
@@ -91,7 +91,7 @@ def main():
     if use_cuda:
         torch.cuda.manual_seed_all(1024)
 
-    if args.dim_reduction:
+    if args.reduce_dim:
         idx = torch.tensor(sample(range(0, t_d), d))
 
     # set model's intermediate outputs
@@ -165,7 +165,7 @@ def main():
                 embedding_vectors = embedding_concat(embedding_vectors, train_outputs[layer_name])
 
             # randomly select d dimension
-            if args.dim_reduction:
+            if args.reduce_dim:
                 embedding_vectors = torch.index_select(embedding_vectors, 1, idx)
             # calculate multivariate Gaussian distribution
             B, C, H, W = embedding_vectors.size()
@@ -219,7 +219,7 @@ def main():
             embedding_vectors = embedding_concat(embedding_vectors, test_outputs[layer_name])
 
         # randomly select d dimension
-        if args.dim_reduction:
+        if args.reduce_dim:
             embedding_vectors = torch.index_select(embedding_vectors, 1, idx)
         
         # calculate distance matrix
