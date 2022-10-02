@@ -231,7 +231,7 @@ def main():
             cov_inv = torch.Tensor(train_outputs[1]).to(device)
             for i in range(H * W):
                 delta = embedding_vectors[:, :, i] - mean[:, i]
-                m_dist = torch.sqrt(torch.diag(torch.mm(torch.mm(delta, cov_inv[:, :, i]), delta.t())))
+                m_dist = torch.sqrt(torch.diag(torch.mm(torch.mm(delta, cov_inv[:, :, i]), delta.t())).clamp(0))
                 dist_list[i] = m_dist
             dist_list = dist_list.cpu().numpy()
         else:
