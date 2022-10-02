@@ -229,11 +229,18 @@ def main():
             dist_list = torch.zeros(size=(H*W, B))
             mean = torch.Tensor(train_outputs[0]).to(device)
             cov_inv = torch.Tensor(train_outputs[1]).to(device)
-            for i in range(H * W):
-                delta = embedding_vectors[:, :, i] - mean[:, i]
-                m_dist = torch.sqrt(torch.diag(torch.mm(torch.mm(delta, cov_inv[:, :, i]), delta.t())).clamp(0))
-                dist_list[i] = m_dist
-            dist_list = dist_list.cpu().numpy()
+            # for i in range(H * W):
+            #     delta = embedding_vectors[:, :, i] - mean[:, i]
+            #     m_dist = torch.sqrt(torch.diag(torch.mm(torch.mm(delta, cov_inv[:, :, i]), delta.t())).clamp(0))
+            #     dist_list[i] = m_dist
+            # dist_list = dist_list.cpu().numpy()
+            # dist_list = np.array(dist_list).transpose(1, 0).reshape(B, H, W)
+            # # upsample
+            # dist_list = torch.tensor(dist_list)
+            delta = (embedding_vectors - mean).permute(2, 0, 1)
+            dist_list = (torch.matmul(delta, cov_inv.permute(2, 0, 1)) * delta).sum(2).permute(1, 0)
+            dist_list = dist_list.reshape(B, H, W)
+            dist_list = dist_list.clamp(0).sqrt().cpu()
         else:
             embedding_vectors = embedding_vectors.view(B, C, H * W).numpy()
             dist_list = []
@@ -244,9 +251,9 @@ def main():
                 dist = list(itertools.chain(*dist))            
                 dist_list.append(dist)
 
-        dist_list = np.array(dist_list).transpose(1, 0).reshape(B, H, W)
-        # upsample
-        dist_list = torch.tensor(dist_list)
+                dist_list = np.array(dist_list).transpose(1, 0).reshape(B, H, W)
+                # upsample
+                dist_list = torch.tensor(dist_list)
         score_map = F.interpolate(dist_list.unsqueeze(1), size=x.size(2), mode='bilinear',
                                   align_corners=False).squeeze().numpy()
         # apply gaussian smoothing on the score map
