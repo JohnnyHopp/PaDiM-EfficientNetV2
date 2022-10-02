@@ -172,21 +172,21 @@ def main():
             embedding_vectors = embedding_vectors.view(B, C, H * W)
             mean = torch.mean(embedding_vectors, dim=0).numpy()
             _cov = torch.zeros(C, C).numpy()
-            conv_inv = torch.zeros(C, C, H * W).numpy()
+            cov_inv = torch.zeros(C, C, H * W).numpy()
             I = np.identity(C)
             for i in range(H * W):
                 # cov[:, :, i] = LedoitWolf().fit(embedding_vectors[:, :, i].numpy()).covariance_
                 _cov = np.cov(embedding_vectors[:, :, i].numpy(), rowvar=False) + 0.01 * I
                 if use_gpu:
                     _cov = torch.Tensor(_cov).to(device)
-                    conv_inv[:, :, i] = torch.linalg.inv(_cov).cpu().numpy()
+                    cov_inv[:, :, i] = torch.linalg.inv(_cov).cpu().numpy()
                 else:    
-                    conv_inv[:, :, i] =  np.linalg.inv(_cov)
+                    cov_inv[:, :, i] =  np.linalg.inv(_cov)
             # save learned distribution
-            train_outputs = [mean, conv_inv]
+            train_outputs = [mean, cov_inv]
             with open(train_feature_filepath, 'wb') as f:
                 pickle.dump(train_outputs, f, protocol=pickle.HIGHEST_PROTOCOL)
-            del mean, _cov, conv_inv
+            del mean, _cov, cov_inv
         else:
             print('load train set feature from: %s' % train_feature_filepath)
             with open(train_feature_filepath, 'rb') as f:
