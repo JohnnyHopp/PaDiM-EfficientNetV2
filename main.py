@@ -235,7 +235,6 @@ def main():
             #     dist_list[i] = m_dist
             # dist_list = dist_list.cpu().numpy()
             # dist_list = np.array(dist_list).transpose(1, 0).reshape(B, H, W)
-            # # upsample
             # dist_list = torch.tensor(dist_list)
             delta = (embedding_vectors - mean).permute(2, 0, 1)
             dist_list = (torch.matmul(delta, cov_inv.permute(2, 0, 1)) * delta).sum(2).permute(1, 0)
@@ -250,10 +249,9 @@ def main():
                 dist = SSD.cdist(embedding_vectors[:,:,i], mean[None, :], metric='mahalanobis', VI=train_outputs[1][:, :, i])
                 dist = list(itertools.chain(*dist))            
                 dist_list.append(dist)
-
-                dist_list = np.array(dist_list).transpose(1, 0).reshape(B, H, W)
-                # upsample
-                dist_list = torch.tensor(dist_list)
+            dist_list = np.array(dist_list).transpose(1, 0).reshape(B, H, W)
+            dist_list = torch.tensor(dist_list)
+        # upsample
         score_map = F.interpolate(dist_list.unsqueeze(1), size=x.size(2), mode='bilinear',
                                   align_corners=False).squeeze().numpy()
         # apply gaussian smoothing on the score map
