@@ -3,7 +3,7 @@ from random import sample
 import argparse
 import numpy as np
 import os
-import pickle
+import h5py
 import itertools
 from sympy import arg
 from tqdm import tqdm
@@ -43,6 +43,7 @@ def parse_args():
     parser.add_argument('-r', '--reduce_dim', action='store_true')
     parser.add_argument('-b', '--batch_size', type=int, default=32)
     parser.add_argument('--use_gpu', action='store_true')
+    parser.add_argument('--save_gpu_memory', action='store_true', help='In case of gpu OOM')
     return parser.parse_args()
 
 
@@ -145,7 +146,7 @@ def main():
         # test_outputs = OrderedDict([('layer1', []), ('layer2', []), ('layer3', []), ('layer4', [])])
 
         # extract train set features
-        train_feature_filepath = os.path.join(args.save_path, 'temp_%s' % args.arch, 'train_%s.pkl' % class_name)
+        train_feature_filepath = os.path.join(args.save_path, 'temp_%s' % args.arch, 'train_%s.hdf5' % class_name)
         if not os.path.exists(train_feature_filepath):
             for (x, _, _) in tqdm(train_dataloader, '| feature extraction | train | %s |' % class_name):
                 # model prediction
@@ -184,13 +185,14 @@ def main():
                     cov_inv[:, :, i] =  np.linalg.inv(_cov)
             # save learned distribution
             train_outputs = [mean, cov_inv]
-            with open(train_feature_filepath, 'wb') as f:
-                pickle.dump(train_outputs, f, protocol=pickle.HIGHEST_PROTOCOL)
+            with h5py.File(train_feature_filepath, 'w') as f:
+                f.create_dataset("mean", data=mean)
+                f.create_dataset("cov_inv", data=cov_inv)
             del mean, _cov, cov_inv
         else:
             print('load train set feature from: %s' % train_feature_filepath)
-            with open(train_feature_filepath, 'rb') as f:
-                train_outputs = pickle.load(f)
+            with h5py.File(train_feature_filepath, 'r') as f:
+                train_outputs = [f['mean'][()], f['cov_inv'][()]]
 
         gt_list = []
         gt_mask_list = []
@@ -229,17 +231,19 @@ def main():
             dist_list = torch.zeros(size=(H*W, B))
             mean = torch.Tensor(train_outputs[0]).to(device)
             cov_inv = torch.Tensor(train_outputs[1]).to(device)
-            # for i in range(H * W):
-            #     delta = embedding_vectors[:, :, i] - mean[:, i]
-            #     m_dist = torch.sqrt(torch.diag(torch.mm(torch.mm(delta, cov_inv[:, :, i]), delta.t())).clamp(0))
-            #     dist_list[i] = m_dist
-            # dist_list = dist_list.cpu().numpy()
-            # dist_list = np.array(dist_list).transpose(1, 0).reshape(B, H, W)
-            # dist_list = torch.tensor(dist_list)
-            delta = (embedding_vectors - mean).permute(2, 0, 1)
-            dist_list = (torch.matmul(delta, cov_inv.permute(2, 0, 1)) * delta).sum(2).permute(1, 0)
-            dist_list = dist_list.reshape(B, H, W)
-            dist_list = dist_list.clamp(0).sqrt().cpu()
+            if args.save_gpu_memory:
+                for i in range(H * W):
+                    delta = embedding_vectors[:, :, i] - mean[:, i]
+                    m_dist = torch.sqrt(torch.diag(torch.mm(torch.mm(delta, cov_inv[:, :, i]), delta.t())).clamp(0))
+                    dist_list[i] = m_dist
+                dist_list = dist_list.cpu().numpy()
+                dist_list = np.array(dist_list).transpose(1, 0).reshape(B, H, W)
+                dist_list = torch.tensor(dist_list)
+            else:
+                delta = (embedding_vectors - mean).permute(2, 0, 1)
+                dist_list = (torch.matmul(delta, cov_inv.permute(2, 0, 1)) * delta).sum(2).permute(1, 0)
+                dist_list = dist_list.reshape(B, H, W)
+                dist_list = dist_list.clamp(0).sqrt().cpu()
         else:
             embedding_vectors = embedding_vectors.view(B, C, H * W).numpy()
             dist_list = []
