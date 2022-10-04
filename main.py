@@ -23,7 +23,7 @@ import matplotlib
 import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
-from torchvision.models import wide_resnet50_2, resnet18, efficientnet_v2_m, efficientnet_v2_l
+from torchvision.models import wide_resnet50_2, resnet18
 import datasets.mvtec as mvtec
 
 import timm
@@ -38,8 +38,9 @@ def parse_args():
     parser.add_argument('-d', '--data_path', type=str, default='D:/dataset/mvtec_anomaly_detection')
     parser.add_argument('-s', '--save_path', type=str, default='./mvtec_result')
     parser.add_argument('-a', '--arch', type=str, choices=['resnet18', 'wide_resnet50_2',
-     'efficientnet_v2_m', 'efficientnet_v2_l', 'efficientnet_b5_ns', 'efficientnet_b6_ns', 'efficientnet_b7_ns', 
-     'tf_efficientnet_l2_ns_475'], default='efficientnet_b7_ns')
+     'efficientnetv2_m_in21ft1k', 'efficientnetv2_xl_in21ft1k', 
+     'efficientnet_b5_ns', 'efficientnet_b6_ns', 'efficientnet_b7_ns', 
+     'efficientnet_l2_ns_475'], default='efficientnetv2_m_in21ft1k')
     parser.add_argument('-r', '--reduce_dim', action='store_true')
     parser.add_argument('-b', '--batch_size', type=int, default=32)
     parser.add_argument('--use_gpu', action='store_true')
@@ -60,31 +61,31 @@ def main():
         model = wide_resnet50_2(pretrained=True, progress=True)
         t_d = 1792
         d = 550
-    elif args.arch == 'efficientnet_v2_m':
-        model = efficientnet_v2_m(pretrained=True, progress=True)
-        t_d = 288# features2,3,4 (48+80+160)
+    elif args.arch == 'efficientnetv2_m_in21ft1k':
+        model = timm.create_model('tf_efficientnetv2_m_in21ft1k', pretrained=True)
+        t_d = (80 + 160 + 176) # (48 + 80 + 160 + 176 + 304) features1,2,3,4,5
         d = 100
-    elif args.arch == 'efficientnet_v2_l':
-        model = efficientnet_v2_l(pretrained=True, progress=True)
-        t_d = (64+96+192) # features2,3,4
+    elif args.arch == 'efficientnetv2_xl_in21ft1k':
+        model = timm.create_model('tf_efficientnetv2_xl_in21ft1k', pretrained=True)
+        t_d = (192 + 256 + 512) # (64 + 96 + 192 + 256 + 512) features1,2,3,4,5
         d = 100
     elif args.arch == 'efficientnet_b5_ns':
         model = timm.create_model('tf_efficientnet_b5_ns', pretrained=True)
-        t_d = (40 + 128 + 176) # 
+        t_d = (40 + 64 + 176) # (40 + 64 + 128 + 176 + 304) features1,2,3,4,5
         d = 100
     elif args.arch == 'efficientnet_b6_ns':
         model = timm.create_model('tf_efficientnet_b6_ns', pretrained=True)
-        # t_d =  # 
+        t_d = (40 + 72 + 200) # (40 + 72 + 144 + 200 + 344) features1,2,3,4,5
         d = 100
     elif args.arch == 'efficientnet_b7_ns':
         model = timm.create_model('tf_efficientnet_b7_ns', pretrained=True)
-        t_d = (48 + 80 + 224) # 352
+        t_d = (48 + 80 + 224) # (48 + 80 + 160 + 224 + 384) features1,2,3,4,5
         d = 100
-    elif args.arch == 'tf_efficientnet_l2_ns_475':
+    elif args.arch == 'efficientnet_l2_ns_475':
         model = timm.create_model('tf_efficientnet_l2_ns_475', pretrained=True)
-        t_d = (104 + 344 + 480) #1000 (104 + 176 + 344 + 480) features1,2,3,4
+        t_d = (104 + 344 + 480) # (104 + 176 + 344 + 480 + 824) features1,2,3,4,5
         d = 550
-    
+
     model.to(device)
     model.eval()
     random.seed(1024)
@@ -105,17 +106,15 @@ def main():
         model.layer1[-1].register_forward_hook(hook)
         model.layer2[-1].register_forward_hook(hook)
         model.layer3[-1].register_forward_hook(hook)
-    elif 'efficientnet_v2' in args.arch:
-        model.features[2][-1].register_forward_hook(hook)
-        model.features[3][-1].register_forward_hook(hook)
-        model.features[4][-1].register_forward_hook(hook)        
-        # model.features[2][0].register_forward_hook(hook)
-        # model.features[3][0].register_forward_hook(hook)
-        # model.features[4][0].register_forward_hook(hook)   
-        # model.features[2][0].register_forward_hook(hook)
-        # model.features[3][-1].register_forward_hook(hook)
-        # model.features[4][-1].register_forward_hook(hook)  
-    elif 'efficientnet_' in args.arch and '_ns' in args.arch:
+    elif args.arch == 'efficientnetv2_m_in21ft1k':
+        model.blocks[2][-1].register_forward_hook(hook)
+        model.blocks[3][-1].register_forward_hook(hook)
+        model.blocks[5][-1].register_forward_hook(hook)
+    elif args.arch == 'efficientnet_b7_ns':
+        model.blocks[1][-1].register_forward_hook(hook)
+        model.blocks[3][-1].register_forward_hook(hook)
+        model.blocks[4][-1].register_forward_hook(hook)
+    elif 'efficientnet' in args.arch:
         model.blocks[1][-1].register_forward_hook(hook)
         # model.blocks[2][-1].register_forward_hook(hook)
         model.blocks[3][-1].register_forward_hook(hook)
@@ -135,9 +134,9 @@ def main():
 
     for class_name in mvtec.CLASS_NAMES:
 
-        train_dataset = mvtec.MVTecDataset(args.data_path, class_name=class_name, is_train=True)
+        train_dataset = mvtec.MVTecDataset(args, class_name=class_name, is_train=True)
         train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, pin_memory=True)
-        test_dataset = mvtec.MVTecDataset(args.data_path, class_name=class_name, is_train=False)
+        test_dataset = mvtec.MVTecDataset(args, class_name=class_name, is_train=False)
         test_dataloader = DataLoader(test_dataset, batch_size=args.batch_size, pin_memory=True)
 
         train_outputs = OrderedDict([('layer1', []), ('layer2', []), ('layer3', [])])
