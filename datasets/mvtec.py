@@ -16,10 +16,10 @@ CLASS_NAMES = ['bottle', 'cable', 'capsule', 'carpet', 'grid',
 
 
 class MVTecDataset(Dataset):
-    def __init__(self, dataset_path='D:/dataset/mvtec_anomaly_detection', class_name='bottle', is_train=True,
+    def __init__(self, args, class_name='bottle', is_train=True,
                  resize=256, cropsize=224):
         assert class_name in CLASS_NAMES, 'class_name: {}, should be in {}'.format(class_name, CLASS_NAMES)
-        self.dataset_path = dataset_path
+        self.dataset_path = args.data_path
         self.class_name = class_name
         self.is_train = is_train
         self.resize = resize
@@ -32,12 +32,18 @@ class MVTecDataset(Dataset):
         # load dataset
         self.x, self.y, self.mask = self.load_dataset_folder()
 
+        if args.arch in ['efficientnetv2_m_in21ft1k', 'efficientnetv2_xl_in21ft1k']:
+            mean=[0.5, 0.5, 0.5]
+            std=[0.5, 0.5, 0.5]
+        else:
+            mean=[0.485, 0.456, 0.406]
+            std=[0.229, 0.224, 0.225]            
         # set transforms
         self.transform_x = T.Compose([T.Resize(resize, Image.ANTIALIAS),
                                       T.CenterCrop(cropsize),
                                       T.ToTensor(),
-                                      T.Normalize(mean=[0.485, 0.456, 0.406],
-                                                  std=[0.229, 0.224, 0.225])])
+                                      T.Normalize(mean=mean,
+                                                  std=std)])
         self.transform_mask = T.Compose([T.Resize(resize, Image.NEAREST),
                                          T.CenterCrop(cropsize),
                                          T.ToTensor()])
