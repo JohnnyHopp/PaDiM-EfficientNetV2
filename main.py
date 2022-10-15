@@ -27,6 +27,7 @@ from torchvision.models import wide_resnet50_2, resnet18
 import datasets.mvtec as mvtec
 
 import timm
+from utils import compute_pca, pca_reduction
 
 # device setup
 use_cuda = torch.cuda.is_available()
@@ -42,6 +43,9 @@ def parse_args():
      'efficientnet_b5_ns', 'efficientnet_b6_ns', 'efficientnet_b7_ns', 
      'efficientnet_l2_ns_475'], default='efficientnetv2_m_in21ft1k')
     parser.add_argument('-r', '--reduce_dim', action='store_true')
+    parser.add_argument('-p', '--pca', action="store_true", help="Enable pca")
+    parser.add_argument('-n', '--npca', action="store_true", help="Enable npca")
+    parser.add_argument('-v', '--variance_threshold', type=float, default=0.99, help="Variance threshold to apply")
     parser.add_argument('-b', '--batch_size', type=int, default=32)
     parser.add_argument('--use_gpu', action='store_true')
     parser.add_argument('--save_gpu_memory', action='store_true', help='In case of gpu OOM')
@@ -63,7 +67,7 @@ def main():
         d = 550
     elif args.arch == 'efficientnetv2_m_in21ft1k':
         model = timm.create_model('tf_efficientnetv2_m_in21ft1k', pretrained=True)
-        t_d = (80 + 160 + 176) # (48 + 80 + 160 + 176 + 304) features1,2,3,4,5
+        t_d = (80 + 160 + 304) # (48 + 80 + 160 + 176 + 304) features1,2,3,4,5
         d = 100
     elif args.arch == 'efficientnetv2_xl_in21ft1k':
         model = timm.create_model('tf_efficientnetv2_xl_in21ft1k', pretrained=True)
@@ -141,13 +145,15 @@ def main():
 
         train_outputs = OrderedDict([('layer1', []), ('layer2', []), ('layer3', [])])
         test_outputs = OrderedDict([('layer1', []), ('layer2', []), ('layer3', [])])
-        # train_outputs = OrderedDict([('layer1', []), ('layer2', []), ('layer3', []), ('layer4', [])])
-        # test_outputs = OrderedDict([('layer1', []), ('layer2', []), ('layer3', []), ('layer4', [])])
 
         # extract train set features
-        train_feature_filepath = os.path.join(args.save_path, 'temp_%s' % args.arch, 'train_%s.hdf5' % class_name)
+        train_feature_filepath = os.path.join(args.save_path, f'temp_{args.arch}', f'train_{class_name}.hdf5')
+        if args.pca:
+            train_feature_filepath = os.path.join(args.save_path, f'temp_{args.arch}', f'train_{class_name}_pca.hdf5')
+        elif args.npca:
+            train_feature_filepath = os.path.join(args.save_path, f'temp_{args.arch}', f'train_{class_name}_npca.hdf5')
         if not os.path.exists(train_feature_filepath):
-            for (x, _, _) in tqdm(train_dataloader, '| feature extraction | train | %s |' % class_name):
+            for (x, _, _) in tqdm(train_dataloader, f'| feature extraction | train | {class_name} |'):
                 # model prediction
                 with torch.no_grad():
                     _ = model(x.to(device))
@@ -156,8 +162,27 @@ def main():
                     train_outputs[k].append(v.cpu().detach())
                 # initialize hook outputs
                 outputs = []
-            for k, v in train_outputs.items():
-                train_outputs[k] = torch.cat(v, 0)
+            if args.npca or args.pca:
+                # calculate npca or pca
+                train_pca_features = []
+                for i,train_output in enumerate(train_outputs.values()):
+                    train_ouput_cat = torch.cat(train_output, 0)
+                    b,c,h,w = train_ouput_cat.size()
+                    train_pca_features.append(train_ouput_cat.permute(0,2,3,1).reshape(b*h*w,c))
+                pca_mean, pca_components = compute_pca(args,
+                    train_pca_features,
+                    variance_threshold=args.variance_threshold,
+                )
+                del train_pca_features, train_ouput_cat
+                for i,k in enumerate(train_outputs.keys()):
+                    outputs_reduced = []
+                    for batch in train_outputs[k]:
+                        reduced = pca_reduction(batch, pca_mean[i], pca_components[i], device)
+                        outputs_reduced.append(reduced)
+                    train_outputs[k] = torch.cat(outputs_reduced, 0).cpu().detach()
+            else:
+                for k, v in train_outputs.items():
+                    train_outputs[k] = torch.cat(v, 0)
 
             # Embedding concat
             embedding_vectors = train_outputs['layer1']
@@ -187,18 +212,25 @@ def main():
             with h5py.File(train_feature_filepath, 'w') as f:
                 f.create_dataset("mean", data=mean)
                 f.create_dataset("cov_inv", data=cov_inv)
+                if args.npca or args.pca:
+                    for i in range(len(pca_mean)):
+                        f.create_dataset(f"pca_mean_{i}", data=pca_mean[i].cpu().numpy())
+                        f.create_dataset(f"pca_components_{i}", data=pca_components[i].cpu().numpy())
             del mean, _cov, cov_inv
         else:
-            print('load train set feature from: %s' % train_feature_filepath)
+            print(f'load train set feature from: {train_feature_filepath}')
             with h5py.File(train_feature_filepath, 'r') as f:
                 train_outputs = [f['mean'][()], f['cov_inv'][()]]
+                if args.npca or args.pca:
+                    pca_mean = [torch.Tensor(f[f'pca_mean_{i}'][()]) for i in range(len(test_outputs))]
+                    pca_components = [torch.Tensor(f[f'pca_components_{i}'][()]) for i in range(len(test_outputs))]
 
         gt_list = []
         gt_mask_list = []
         test_imgs = []
 
         # extract test set features
-        for (x, y, mask) in tqdm(test_dataloader, '| feature extraction | test | %s |' % class_name):
+        for (x, y, mask) in tqdm(test_dataloader, f'| feature extraction | test | {class_name} |'):
             test_imgs.extend(x.cpu().detach().numpy())
             gt_list.extend(y.cpu().detach().numpy())
             gt_mask_list.extend(mask.cpu().detach().numpy())
@@ -211,8 +243,16 @@ def main():
                 # print(v.shape)
             # initialize hook outputs
             outputs = []
-        for k, v in test_outputs.items():
-            test_outputs[k] = torch.cat(v, 0)
+        if args.npca or args.pca:
+            for i,k in enumerate(test_outputs.keys()):
+                outputs_reduced = []
+                for batch in test_outputs[k]:
+                    reduced = pca_reduction(batch, pca_mean[i], pca_components[i], device)
+                    outputs_reduced.append(reduced)
+                test_outputs[k] = torch.cat(outputs_reduced, 0).cpu().detach()
+        else:
+            for k, v in test_outputs.items():
+                test_outputs[k] = torch.cat(v, 0)
         
         # Embedding concat
         embedding_vectors = test_outputs['layer1']
