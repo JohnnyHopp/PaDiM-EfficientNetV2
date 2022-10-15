@@ -8,6 +8,7 @@ Both PaDiM-EfficientNetV2 and PaDiM-EfficentNet_NS outperform PaDiM-WR50-Rd550 f
 * The cov_inv instead of cov is saved to speed up the calculation of mahalanobis distance
 * Optimize both torch and numpy methods to calculate mahalanobis distance
 * Save train params, mean and cov_inv, in hdf5 format instead of pickle in case of OOM issue when memory is limited
+* Add PCA and NPCA to reduce feature dimensionality
 
 ## Requirement
 
