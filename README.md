@@ -31,6 +31,8 @@ MVTec AD datasets : Download from [MVTec website](https://www.mvtec.com/company/
 python main.py --data_path mvtec_anomaly_detection/ --save_path ./mvtec_result --arch efficientnetv2_m_in21ft1k --use_gpu
 python main.py --data_path mvtec_anomaly_detection/ --save_path ./mvtec_result --arch efficientnet_b7_ns --use_gpu
 ```
+### Download pre-trained feature distributions
+Download pretrained feature distribution of efficientnetv2_m model from dropbox link [efficientnetv2_m feature distribution](https://www.dropbox.com/sh/ejvum8vqz6fs8t6/AADHfyjnxWxq-w5WJ7kLHkLya?dl=0)
 
 ## Results
 
